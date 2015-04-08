@@ -22,4 +22,8 @@ app.use(function(req, res){
 
 });
 
-app.listen(8014);
+
+if (require.main === module) {
+  app.listen(8014);
+}
+
