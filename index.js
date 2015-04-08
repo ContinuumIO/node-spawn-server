@@ -20,6 +20,38 @@ var httpProxy = require("http-proxy");
 var debug = require('debug')('spawn-server');
 
 
+
+var waitForServerInterval = 100;
+function waitForServer(startTime, maxDelay, target, callback){
+
+  function waitForServerInner(){
+    debug("waitForServer ...");
+
+    http.get(target, function(res) {
+      debug("waitForServer Got response: " + res.statusCode);
+      callback();
+    }).on('error', function(err) {
+      debug("waitForServer Got error: " + err);
+      if (err.code == 'ECONNREFUSED'){
+        var currTime = new Date();
+        if ((currTime - startTime) > maxDelay){
+          return callback(err);
+        }
+        setTimeout(waitForServerInner, waitForServerInterval);
+        return;
+
+      } else {
+        return callback(err);
+      }
+
+    });
+  }
+
+  waitForServerInner();
+}
+
+
+
 function SpawnServer(options, createArgs){
 
   if (!createArgs){
@@ -33,9 +65,13 @@ function SpawnServer(options, createArgs){
     throw new Error("argument createArgs must be a function");
   }
 
-  var running = {};
+  var running = su.running = {};
 
-  function create_proxy(uid, callback){
+  su.createProxy = createProxy;
+  su.options = options;
+  su.createArgs = createArgs;
+
+  function createProxy(uid, callback){
 
     var userInfo = pwuid(uid);
 
@@ -55,7 +91,7 @@ function SpawnServer(options, createArgs){
       debug("launching command: " + command);
 
       var child = child_process.spawn(command, args, spawn_options);
-      child._start_time = new Date();
+      child._startTime = new Date();
 
       child.on('close', function(){
         debug('child closed');
@@ -69,34 +105,9 @@ function SpawnServer(options, createArgs){
       var proxy = running[uid] = httpProxy.createProxyServer({target: target});
       proxy._child = child;
 
-      function waitForServer(target, callback){
-
-        debug("waitForServer");
-        http.get(target, function(res) {
-          debug("waitForServer Got response: " + res.statusCode);
-          callback();
-        }).on('error', function(err) {
-          debug("waitForServer Got error: " + err);
-          if (err.code == 'ECONNREFUSED'){
-            var currTime = new Date();
-            if ((currTime - child._start_time) > maxDelay){
-              return callback(err);
-            }
-
-            setTimeout(waitForServer, 100, target, callback);
-            return;
-
-          } else {
-            return callback(err);
-          }
-
-        });
-      }
-
-      waitForServer(target, function(err){
+      waitForServer(child._startTime, maxDelay, target, function(err){
         callback(err, proxy);
       });
-
 
     });
 
@@ -126,32 +137,34 @@ function SpawnServer(options, createArgs){
 
       var proxy = running[uid];
 
-
-      function proxyError(err){
+      // Proxy error occurred. returns next(error)
+      // Unless the child has exited after `options.maxDelay`
+      // then remove the child and try to restart.
+      function handleProxyError(err){
 
         var currTime = new Date();
-        var upTime = currTime - proxy._child._start_time;
+        var child = proxy._child
+        var upTime = currTime - child._startTime;
 
-        debug("proxy error child-pid:" + proxy._child.pid + " upTime:" + upTime + "ms closed:" + proxy._child._closed);
-        err.SPAWN_SERVER_PID = proxy._child.pid;
+        debug("proxy error child-pid:" + child.pid + " upTime:" + upTime + "ms closed:" + child._closed);
+        err.SPAWN_SERVER_PID = child.pid;
         // Remove pid from running process map and start it again
 
-        if (proxy._child._closed && (upTime > maxDelay)){
-          debug("Child process has exited after " + upTime + "ms. Restarting process")
-          delete running[uid];
+        if (child._closed && (upTime > su.options.maxDelay)){
+          debug("Child process has exited after " + upTime + "ms. Restarting process");
+          delete su.running[uid];
           return su(req, res, next);
         }
-
         next(err);
-
       }
+
 
       if (!proxy){
 
-        create_proxy(uid, function(err, proxy){
+        createProxy(uid, function(err, proxy){
           if (err) return next(err);
           debug("proxy to web child pid:" + proxy._child.pid + " target:" + JSON.stringify(proxy.options.target));
-          proxy.web(req, res, null, proxyError);
+          proxy.web(req, res, null, handleProxyError);
 
         });
 
@@ -159,7 +172,7 @@ function SpawnServer(options, createArgs){
       }
 
       debug("proxy to web child pid:" + proxy._child.pid + " target:" + JSON.stringify(proxy.options.target));
-      proxy.web(req, res, null, proxyError);
+      proxy.web(req, res, null, handleProxyError);
 
     });
 
@@ -179,3 +192,5 @@ function SpawnServer(options, createArgs){
 
 
 module.exports = SpawnServer;
+SpawnServer.waitForServer = waitForServer;
+
