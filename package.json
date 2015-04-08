@@ -1,0 +1,34 @@
+{
+  "name": "spawn-server",
+  "version": "1.0.0",
+  "description": "Spawn Serverlets if root user",
+  "main": "index.js",
+  "scripts": {
+    "test": "./node_modules/mocha/bin/mocha test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/srossross/node-spawn-server"
+  },
+  "keywords": [
+    "expressjs",
+    "server",
+    "connect"
+  ],
+  "author": "Sean Ross-Ross",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/srossross/node-spawn-server/issues"
+  },
+  "homepage": "https://github.com/srossross/node-spawn-server",
+  "devDependencies": {
+    "chai": "^2.2.0",
+    "mocha": "^2.2.1"
+  },
+  "dependencies": {
+    "debug": "^2.1.3",
+    "http-proxy": "^1.10.1",
+    "pwuid": "^1.0.2",
+    "uid-number": "0.0.6"
+  }
+}
